@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Material+Icons">
+    <link rel="stylesheet" href="https://unpkg.com/bootstrap-material-design@4.1.1/dist/css/bootstrap-material-design.min.css" integrity="sha384-wXznGJNEXNG1NFsbm0ugrLFMQPWswR3lds2VeinahP8N0zJw9VWSopbjv2x7WCvX" crossorigin="anonymous">
+        <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+
+<body>
+<nav class="navbar navbar-dark bg-dark">
+    <a class="navbar-brand" href="#">Chat(proof of concept)</a>
+</nav>
+<br>
+
+<div class="container">
+
+    <div class="row">
+        <div class="col-sm">
+            <ul class="list-group" id="userListDisplay">
+                <li class="list-group-item active">User list:</li>
+            </ul>
+        </div>
+<div class="col-sm">
+<p>Current Server Status:</p>
+<label name="statusDisplay-textarea" id="statusDisplay"></label>
+</div>
+    </div>
+    <div class = "row">
+        <div class="col-sm">
+            <form method="POST">
+                <input name="subscribe-textarea" id="subscribe" class="form-control"  placeholder="Message ..">
+            </form>
+        <button onclick="send()" class="btn btn-primary" id="btn_sub">send</button>
+        
+        <br>
+        <br>
+        <br>
+        </div>        
+    </div>
+</div>
+
+<script type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/socket.io/1.3.6/socket.io.min.js" ></script>
+<script src="https://cdn.jsdelivr.net/npm/node-forge@0.7.0/dist/forge.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/aes.js"></script>
+<script>
+    var dict = new Object();
+    var rsa = forge.pki.rsa;
+    var keypair = rsa.generateKeyPair({bits: 2048, e: 0x10001});
+    var pki = forge.pki;
+    var key = "";
+    var notify;
+    var pubResult;
+    var pd
+
+    var socket = io.connect('http://' + 'localhost' + ':' + 5000);
+    socket.on('connect', function() {
+        console.log('Websocket connected!');
+        var pd2 = document.getElementById("statusDisplay").innerHTML;
+        statusPrint = pd2 + "\n" + "Connected to the chat Server" + "."+ "<br>";
+        document.getElementById("statusDisplay").innerHTML = statusPrint;
+    });
+
+    socket.on('sendMsg', function(message) {
+        var pd2 = document.getElementById("statusDisplay").innerHTML;
+        fromServer = JSON.parse(message);
+        msg = fromServer['msg'];
+        console.log(msg);
+        console.log(key);
+        var bytes  = CryptoJS.AES.decrypt(msg, key);
+        var originalText = bytes.toString(CryptoJS.enc.Utf8);
+        statusPrint = pd2 + "\n" + fromServer['sender'] + ": " + originalText + "<br>";
+        document.getElementById("statusDisplay").innerHTML = statusPrint;
+    })
+    
+    socket.on('userListUpdate', function(message) {
+        var pd2 = document.getElementById("userListDisplay").innerHTML;
+        fromServer = JSON.parse(message);
+        statusPrint =   "<li class=\"list-group-item active\">User list:</li>"
+        for(var i = 0; i < fromServer.length; i++)
+        {
+          statusPrint = statusPrint + "<li class=\"list-group-item\">" + fromServer[i] + "</li>"
+          document.getElementById("userListDisplay").innerHTML = statusPrint;
+        }
+        console.log(fromServer);
+    })
+
+    socket.on('setKeyNow', function(message) {
+        var pd2 = document.getElementById("statusDisplay").innerHTML;
+        statusPrint = pd2 + "\n" + "Key requested from the server " + "<br>";
+        document.getElementById("statusDisplay").innerHTML = statusPrint;
+        key = forge.random.getBytesSync(16);
+        iv = forge.random.getBytesSync(16);
+        console.log(key);
+        console.log(iv);
+        socket.emit('keySet',{dest: ''});
+    })
+
+    socket.on('setRoomKeyNow', function(message) {
+        key = keypair.privateKey.decrypt(message);
+        var pd2 = document.getElementById("statusDisplay").innerHTML;
+        statusPrint = pd2 + "\n" + "Room key received" + "."+ "<br>";
+        document.getElementById("statusDisplay").innerHTML = statusPrint;
+    })
+
+    socket.on('givePubKeyNow', function(message) {
+        var pem = pki.publicKeyToPem(keypair.publicKey);
+        socket.emit('getKey',{publicKey: pem});
+    })
+
+    socket.on('giveRoomKeyNow', function(message) {
+        fromServer = JSON.parse(message);
+        var toPublicKey = pki.publicKeyFromPem(fromServer['key']);
+        var dataToSend = toPublicKey.encrypt(key)
+        socket.emit('getRoomKey',{sid:fromServer['cid'],encryptedKey: dataToSend});
+    })
+    function send() {
+        subName = document.getElementById("subscribe").value;
+        var encrypted = CryptoJS.AES.encrypt(subName, key);
+        socket.emit('send', {dest: 'all', msg: encrypted.toString()});
+    }
+
+    function notify(msg) {
+    // for people who use an ancient web browser that doesn't support websocket 
+  if (!("Notification" in window)) {
+    alert("You need a newer web browser to use this website.");
+  }
+
+    // send a notification 
+  else if (Notification.permission === "granted") {
+    var notification = new Notification(msg);
+  }
+
+  else if (Notification.permission !== "denied") {
+      // request a permission to send a notification if it's denied
+    Notification.requestPermission().then(function (permission) {
+      if (permission === "granted") {
+        var notification = new Notification(msg);
+      }
+    });
+  }
+}
+</script>
+</body>
+</html>
